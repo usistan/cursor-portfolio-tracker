@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "portfolio-checker"
 version = "0.1.0"
 description = "Tägliche Portfolio-Zusammenfassung (Broker-Connectoren)"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pyetrade>=2.1.1",
