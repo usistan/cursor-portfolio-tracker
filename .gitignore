@@ -7,3 +7,4 @@ dist/
 build/
 # lokale OAuth-Tokens — niemals committen
 .etrade_tokens.json
+.schwab_token.json

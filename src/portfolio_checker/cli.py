@@ -10,13 +10,19 @@ import sys
 from dotenv import load_dotenv
 from requests_oauthlib.oauth1_session import TokenRequestDenied
 
-from portfolio_checker.config import _clean_credential, load_etrade_settings
+from portfolio_checker.config import (
+    _clean_credential,
+    load_etrade_settings,
+    load_schwab_settings,
+)
 from portfolio_checker.etrade_oauth import EtradeOAuth, oauth_api_base
 from portfolio_checker.etrade_service import (
     fetch_portfolio_snapshot,
     list_accounts_json,
     renew_access_token,
 )
+from portfolio_checker.schwab_service import fetch_portfolio_snapshot as schwab_fetch_portfolio
+from portfolio_checker.schwab_service import make_client as schwab_make_client
 from portfolio_checker.token_store import load_tokens, save_tokens
 
 
@@ -134,11 +140,88 @@ def _cmd_etrade_portfolio(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_schwab_diagnose() -> int:
+    load_dotenv()
+    now = datetime.datetime.now().astimezone()
+    k = _clean_credential(os.environ.get("SCHWAB_API_KEY", ""))
+    s = _clean_credential(os.environ.get("SCHWAB_APP_SECRET", ""))
+    cb = _clean_credential(os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182"))
+    raw_path = os.environ.get("SCHWAB_TOKEN_PATH", ".schwab_token.json").strip()
+    print("Schwab Diagnose (keine API-Verbindung)")
+    print(f"  Lokale Zeit: {now.isoformat()}")
+    print(f"  SCHWAB_CALLBACK_URL: {cb or '(nicht gesetzt)'}")
+    print(f"  API Key Länge: {len(k)} Zeichen")
+    if len(k) >= 8:
+        print(f"  API Key (Maskierung): {k[:4]}…{k[-4:]}")
+    elif k:
+        print("  API Key: (kurz — prüfen)")
+    else:
+        print("  API Key: (nicht gesetzt)")
+    print(f"  App Secret Länge: {len(s)} Zeichen")
+    if not s:
+        print("  App Secret: (nicht gesetzt)")
+    print(f"  Token-Datei: {raw_path}")
+    print(
+        "  Hinweis: Callback-URL muss exakt der App auf developer.schwab.com entsprechen "
+        "(z. B. https://127.0.0.1:8182)."
+    )
+    return 0
+
+
+def _cmd_schwab_authorize(args: argparse.Namespace) -> int:
+    from schwab.auth import client_from_login_flow, client_from_manual_flow
+
+    settings = load_schwab_settings()
+    tp = str(settings.token_path)
+    print(f"Callback-URL (muss zum Portal passen): {settings.callback_url}")
+    if args.login_flow:
+        client_from_login_flow(
+            settings.api_key,
+            settings.app_secret,
+            settings.callback_url,
+            tp,
+            enforce_enums=True,
+            callback_timeout=args.callback_timeout,
+        )
+    else:
+        print(
+            "Manueller OAuth-Flow (für SSH/Pi ohne Browser auf dem Gerät). "
+            "Anweisungen folgen.\n",
+        )
+        client_from_manual_flow(
+            settings.api_key,
+            settings.app_secret,
+            settings.callback_url,
+            tp,
+            enforce_enums=True,
+        )
+    print(f"Token gespeichert unter {tp}")
+    return 0
+
+
+def _cmd_schwab_accounts() -> int:
+    settings = load_schwab_settings()
+    client = schwab_make_client(settings)
+    r = client.get_accounts(fields=[client.Account.Fields.POSITIONS])
+    r.raise_for_status()
+    json.dump(r.json(), sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_schwab_portfolio() -> int:
+    settings = load_schwab_settings()
+    snap = schwab_fetch_portfolio(settings)
+    json.dump(snap, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         prog="portfolio-checker",
-        description="Portfolio-Checker (Broker: E*TRADE zuerst).",
+        description="Portfolio-Checker (E*TRADE, Schwab, …).",
     )
     parser.add_argument(
         "-v",
@@ -173,6 +256,41 @@ def main(argv: list[str] | None = None) -> int:
         help="Portfolio-Ansicht (Default: PERFORMANCE)",
     )
 
+    p_sc = sub.add_parser("schwab", help="Charles Schwab Trader API (OAuth 2.0)")
+    sc_sub = p_sc.add_subparsers(dest="schwab_cmd", required=True)
+
+    sc_sub.add_parser(
+        "diagnose",
+        help="Umgebung prüfen (Callback-URL, Key-Längen) ohne API-Call",
+    )
+
+    p_auth = sc_sub.add_parser(
+        "authorize",
+        help="OAuth: Token-Datei erzeugen (Standard: manueller Flow; Pi/SSH-freundlich)",
+    )
+    p_auth.add_argument(
+        "--login-flow",
+        action="store_true",
+        help="Lokalen Browser + Callback-Server nutzen (auf dem Pi oft ungeeignet)",
+    )
+    p_auth.add_argument(
+        "--callback-timeout",
+        type=float,
+        default=300.0,
+        metavar="SEC",
+        help="Nur mit --login-flow: Timeout auf Redirect (Default: 300)",
+    )
+
+    sc_sub.add_parser(
+        "accounts",
+        help="Alle verknüpften Konten inkl. Positions-Feld (Roh-JSON der API)",
+    )
+
+    sc_sub.add_parser(
+        "portfolio",
+        help="Konten mit Hash + Positions-Details (normalisiertes JSON)",
+    )
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.WARNING,
@@ -188,6 +306,16 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_etrade_accounts()
         if args.etrade_cmd == "portfolio":
             return _cmd_etrade_portfolio(args)
+
+    if args.command == "schwab":
+        if args.schwab_cmd == "diagnose":
+            return _cmd_schwab_diagnose()
+        if args.schwab_cmd == "authorize":
+            return _cmd_schwab_authorize(args)
+        if args.schwab_cmd == "accounts":
+            return _cmd_schwab_accounts()
+        if args.schwab_cmd == "portfolio":
+            return _cmd_schwab_portfolio()
 
     raise RuntimeError("unhandled command")
 

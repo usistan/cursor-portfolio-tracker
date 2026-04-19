@@ -47,3 +47,33 @@ def load_etrade_settings() -> EtradeSettings:
         sandbox=sandbox,
         token_path=token_path,
     )
+
+
+@dataclass(frozen=True)
+class SchwabSettings:
+    api_key: str
+    app_secret: str
+    callback_url: str
+    token_path: Path
+
+
+def load_schwab_settings() -> SchwabSettings:
+    """Charles Schwab Trader API (OAuth 2.0) — siehe env.example."""
+    load_dotenv()
+    api_key = _clean_credential(os.environ.get("SCHWAB_API_KEY", ""))
+    secret = _clean_credential(os.environ.get("SCHWAB_APP_SECRET", ""))
+    if not api_key or not secret:
+        raise RuntimeError(
+            "SCHWAB_API_KEY und SCHWAB_APP_SECRET müssen gesetzt sein "
+            "(Registrierung: https://developer.schwab.com/)."
+        )
+    callback = _clean_credential(
+        os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182")
+    )
+    raw_path = os.environ.get("SCHWAB_TOKEN_PATH", ".schwab_token.json").strip()
+    return SchwabSettings(
+        api_key=api_key,
+        app_secret=secret,
+        callback_url=callback,
+        token_path=Path(raw_path).expanduser(),
+    )
