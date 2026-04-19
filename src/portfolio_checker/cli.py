@@ -1,18 +1,71 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import logging
+import os
 import sys
 
-from portfolio_checker.config import load_etrade_settings
-from portfolio_checker.etrade_oauth import EtradeOAuth
+from dotenv import load_dotenv
+from requests_oauthlib.oauth1_session import TokenRequestDenied
+
+from portfolio_checker.config import _clean_credential, load_etrade_settings
+from portfolio_checker.etrade_oauth import EtradeOAuth, oauth_api_base
 from portfolio_checker.etrade_service import (
     fetch_portfolio_snapshot,
     list_accounts_json,
     renew_access_token,
 )
 from portfolio_checker.token_store import load_tokens, save_tokens
+
+
+def _etrade_consumer_key_rejected_help() -> None:
+    print(
+        "\nE*TRADE meldet: oauth_problem=consumer_key_rejected\n"
+        "\n"
+        "Das Consumer-Key/Secret-Paar wird für diesen OAuth-Host abgelehnt. Häufige Ursachen:\n"
+        "\n"
+        "  • Falscher oder alter Consumer Secret (muss exakt zum Key im Developer-Portal passen).\n"
+        "  • Sandbox-Key von us.etrade.com/etx/ris/apikey — dann ETRADE_SANDBOX=true setzen und\n"
+        "    erneut autorisieren (OAuth-Host wechselt auf apisb.etrade.com).\n"
+        "  • Live/Production-Key: Survey + API Agreement müssen erledigt sein (Getting Started).\n"
+        "    Vendor-Keys können „Inactive“ sein, bis E*TRADE sie freischaltet.\n"
+        "  • Systemzeit auf dem Pi: OAuth verlangt korrekte Uhrzeit (NTP), Abweichung max. ~5 Minuten.\n"
+        "\n"
+        "Prüfen: portfolio-checker etrade diagnose\n"
+        "Doku: https://developer.etrade.com/getting-started\n",
+        file=sys.stderr,
+    )
+
+
+def _cmd_etrade_diagnose() -> int:
+    load_dotenv()
+    now = datetime.datetime.now().astimezone()
+    sandbox = os.environ.get("ETRADE_SANDBOX", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    raw_path = os.environ.get("ETRADE_TOKEN_PATH", ".etrade_tokens.json").strip()
+    k = _clean_credential(os.environ.get("ETRADE_CONSUMER_KEY", ""))
+    s = _clean_credential(os.environ.get("ETRADE_CONSUMER_SECRET", ""))
+    print("E*TRADE Diagnose (keine Netzwerk-Anfrage)")
+    print(f"  Lokale Zeit: {now.isoformat()}")
+    print(f"  ETRADE_SANDBOX: {sandbox}")
+    print(f"  OAuth request_token Host: {oauth_api_base(sandbox)}")
+    print(f"  Consumer Key Länge: {len(k)} Zeichen")
+    if len(k) >= 8:
+        print(f"  Consumer Key (Maskierung): {k[:4]}…{k[-4:]}")
+    elif k:
+        print("  Consumer Key: (verkürzt — prüfen)")
+    else:
+        print("  Consumer Key: (nicht gesetzt)")
+    print(f"  Consumer Secret Länge: {len(s)} Zeichen")
+    if not s:
+        print("  Consumer Secret: (nicht gesetzt)")
+    print(f"  Token-Datei: {raw_path}")
+    return 0
 
 
 def _cmd_etrade_authorize() -> int:
@@ -24,7 +77,12 @@ def _cmd_etrade_authorize() -> int:
         settings.consumer_secret,
         sandbox=settings.sandbox,
     )
-    url = oauth.get_request_token()
+    try:
+        url = oauth.get_request_token()
+    except TokenRequestDenied as exc:
+        print(f"Fehler: {exc}", file=sys.stderr)
+        _etrade_consumer_key_rejected_help()
+        return 1
     print("1) Diese URL im Browser öffnen und bei E*TRADE anmelden:")
     print(url)
     print("2) Nach Freigabe den Verification Code (Verifier) eingeben.")
@@ -32,7 +90,12 @@ def _cmd_etrade_authorize() -> int:
     if not verifier:
         print("Abbruch: kein Verifier.", file=sys.stderr)
         return 1
-    tokens = oauth.get_access_token(verifier)
+    try:
+        tokens = oauth.get_access_token(verifier)
+    except TokenRequestDenied as exc:
+        print(f"Fehler: {exc}", file=sys.stderr)
+        _etrade_consumer_key_rejected_help()
+        return 1
     save_tokens(
         settings.token_path,
         {
@@ -88,6 +151,11 @@ def main(argv: list[str] | None = None) -> int:
 
     et_sub.add_parser("authorize", help="OAuth: Browser-URL + Verifier, speichert Tokens")
 
+    et_sub.add_parser(
+        "diagnose",
+        help="Prüft .env/Umgebung (ohne API-Call): Sandbox-Modus, Key-Längen, Uhrzeit",
+    )
+
     et_sub.add_parser("accounts", help="Rohdaten: List Accounts (JSON)")
 
     p_pf = et_sub.add_parser("portfolio", help="Alle Konten + Positionen (JSON)")
@@ -112,6 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "etrade":
         if args.etrade_cmd == "authorize":
             return _cmd_etrade_authorize()
+        if args.etrade_cmd == "diagnose":
+            return _cmd_etrade_diagnose()
         if args.etrade_cmd == "accounts":
             return _cmd_etrade_accounts()
         if args.etrade_cmd == "portfolio":

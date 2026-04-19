@@ -7,6 +7,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+def _clean_credential(raw: str) -> str:
+    """Entfernt BOM, äußere Whitespaces und einfache Anführungszeichen aus .env-Zeilen."""
+    s = raw.strip().lstrip("\ufeff")
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1]
+    return s.strip()
+
+
 @dataclass(frozen=True)
 class EtradeSettings:
     consumer_key: str
@@ -18,8 +26,8 @@ class EtradeSettings:
 def load_etrade_settings() -> EtradeSettings:
     """Lädt E*TRADE-Credentials aus der Umgebung (.env optional)."""
     load_dotenv()
-    key = os.environ.get("ETRADE_CONSUMER_KEY", "").strip()
-    secret = os.environ.get("ETRADE_CONSUMER_SECRET", "").strip()
+    key = _clean_credential(os.environ.get("ETRADE_CONSUMER_KEY", ""))
+    secret = _clean_credential(os.environ.get("ETRADE_CONSUMER_SECRET", ""))
     if not key or not secret:
         raise RuntimeError(
             "ETRADE_CONSUMER_KEY und ETRADE_CONSUMER_SECRET müssen gesetzt sein "
