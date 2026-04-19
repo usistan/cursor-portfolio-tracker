@@ -29,6 +29,8 @@ def _etrade_consumer_key_rejected_help() -> None:
         "  • Falscher oder alter Consumer Secret (muss exakt zum Key im Developer-Portal passen).\n"
         "  • Sandbox-Key von us.etrade.com/etx/ris/apikey — dann ETRADE_SANDBOX=true setzen und\n"
         "    erneut autorisieren (OAuth-Host wechselt auf apisb.etrade.com).\n"
+        "  • PROD-Key mit „pending approval“ im Portal: OAuth funktioniert erst nach Freigabe durch\n"
+        "    E*TRADE — bis dahin consumer_key_rejected.\n"
         "  • Live/Production-Key: Survey + API Agreement müssen erledigt sein (Getting Started).\n"
         "    Vendor-Keys können „Inactive“ sein, bis E*TRADE sie freischaltet.\n"
         "  • Systemzeit auf dem Pi: OAuth verlangt korrekte Uhrzeit (NTP), Abweichung max. ~5 Minuten.\n"
