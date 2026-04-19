@@ -25,7 +25,8 @@ def load_etrade_settings() -> EtradeSettings:
             "ETRADE_CONSUMER_KEY und ETRADE_CONSUMER_SECRET müssen gesetzt sein "
             "(z. B. via env.example kopieren nach .env)."
         )
-    sandbox = os.environ.get("ETRADE_SANDBOX", "true").lower() in (
+    # Default: Produktion — wer Sandbox will, setzt ETRADE_SANDBOX=true
+    sandbox = os.environ.get("ETRADE_SANDBOX", "false").lower() in (
         "1",
         "true",
         "yes",

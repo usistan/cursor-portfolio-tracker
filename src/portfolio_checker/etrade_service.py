@@ -4,9 +4,10 @@ import logging
 from typing import Any
 
 import pyetrade
-from pyetrade.authorization import ETradeAccessManager
+from requests_oauthlib import OAuth1Session
 
 from portfolio_checker.config import EtradeSettings
+from portfolio_checker.etrade_oauth import oauth_api_base
 from portfolio_checker.etrade_parse import parse_account_list, parse_portfolio_page
 
 LOGGER = logging.getLogger(__name__)
@@ -26,13 +27,17 @@ def make_accounts_client(
 
 def renew_access_token(settings: EtradeSettings, tokens: dict[str, str]) -> None:
     """Erneuert den Access Token (E*TRADE: u. a. nach Inaktivität sinnvoll)."""
-    mgr = ETradeAccessManager(
+    base = oauth_api_base(settings.sandbox)
+    url = f"{base}/oauth/renew_access_token"
+    session = OAuth1Session(
         settings.consumer_key,
         settings.consumer_secret,
         tokens["oauth_token"],
         tokens["oauth_token_secret"],
+        signature_type="AUTH_HEADER",
     )
-    mgr.renew_access_token()
+    resp = session.get(url)
+    resp.raise_for_status()
 
 
 def list_accounts_json(settings: EtradeSettings, tokens: dict[str, str]) -> dict:

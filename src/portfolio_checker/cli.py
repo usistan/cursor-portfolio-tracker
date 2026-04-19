@@ -5,9 +5,8 @@ import json
 import logging
 import sys
 
-import pyetrade
-
 from portfolio_checker.config import load_etrade_settings
+from portfolio_checker.etrade_oauth import EtradeOAuth
 from portfolio_checker.etrade_service import (
     fetch_portfolio_snapshot,
     list_accounts_json,
@@ -18,7 +17,13 @@ from portfolio_checker.token_store import load_tokens, save_tokens
 
 def _cmd_etrade_authorize() -> int:
     settings = load_etrade_settings()
-    oauth = pyetrade.ETradeOAuth(settings.consumer_key, settings.consumer_secret)
+    mode = "SANDBOX (apisb.etrade.com)" if settings.sandbox else "PRODUCTION (api.etrade.com)"
+    print(f"OAuth-Modus: {mode}")
+    oauth = EtradeOAuth(
+        settings.consumer_key,
+        settings.consumer_secret,
+        sandbox=settings.sandbox,
+    )
     url = oauth.get_request_token()
     print("1) Diese URL im Browser öffnen und bei E*TRADE anmelden:")
     print(url)
