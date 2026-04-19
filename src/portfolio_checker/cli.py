@@ -13,6 +13,7 @@ from requests_oauthlib.oauth1_session import TokenRequestDenied
 from portfolio_checker.config import (
     _clean_credential,
     load_etrade_settings,
+    load_ibkr_settings,
     load_schwab_settings,
 )
 from portfolio_checker.etrade_oauth import EtradeOAuth, oauth_api_base
@@ -21,6 +22,9 @@ from portfolio_checker.etrade_service import (
     list_accounts_json,
     renew_access_token,
 )
+from portfolio_checker.ibkr_service import authentication_status as ibkr_auth_status
+from portfolio_checker.ibkr_service import fetch_portfolio_snapshot as ibkr_fetch_portfolio
+from portfolio_checker.ibkr_service import make_client as ibkr_make_client
 from portfolio_checker.schwab_service import fetch_portfolio_snapshot as schwab_fetch_portfolio
 from portfolio_checker.schwab_service import make_client as schwab_make_client
 from portfolio_checker.token_store import load_tokens, save_tokens
@@ -217,11 +221,63 @@ def _cmd_schwab_portfolio() -> int:
     return 0
 
 
+def _cmd_ibkr_diagnose() -> int:
+    load_dotenv()
+    now = datetime.datetime.now().astimezone()
+    try:
+        s = load_ibkr_settings()
+    except RuntimeError as e:
+        print(f"Konfiguration: {e}", file=sys.stderr)
+        return 1
+    print("Interactive Brokers (Client Portal API, ibind)")
+    print(f"  Lokale Zeit: {now.isoformat()}")
+    print(f"  IBKR_USE_OAUTH: {s.use_oauth}")
+    if s.use_oauth:
+        print("  Modus: OAuth 1.0a (siehe IBIND_OAUTH1A_* in der ibind-Dokumentation)")
+    else:
+        url = s.rest_url or f"https://{s.host}:{s.port}{s.base_route}"
+        print(f"  Gateway-URL: {url}")
+    print(
+        f"  IBKR_ACCOUNT_ID: {s.account_id or '(auto aus /portfolio/accounts)'}",
+    )
+    print(
+        "\n  Hinweis: Gateway betreiben, im Browser anmelden (IB Key), dann z. B. "
+        "`portfolio-checker ibkr auth`.",
+    )
+    return 0
+
+
+def _cmd_ibkr_auth() -> int:
+    settings = load_ibkr_settings()
+    data = ibkr_auth_status(settings)
+    json.dump(data, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_ibkr_accounts() -> int:
+    settings = load_ibkr_settings()
+    client = ibkr_make_client(settings)
+    r = client.portfolio_accounts()
+    out = r.data
+    json.dump(out, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def _cmd_ibkr_portfolio() -> int:
+    settings = load_ibkr_settings()
+    snap = ibkr_fetch_portfolio(settings)
+    json.dump(snap, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     parser = argparse.ArgumentParser(
         prog="portfolio-checker",
-        description="Portfolio-Checker (E*TRADE, Schwab, …).",
+        description="Portfolio-Checker (E*TRADE, Schwab, Interactive Brokers, …).",
     )
     parser.add_argument(
         "-v",
@@ -291,6 +347,29 @@ def main(argv: list[str] | None = None) -> int:
         help="Konten mit Hash + Positions-Details (normalisiertes JSON)",
     )
 
+    p_ib = sub.add_parser(
+        "ibkr",
+        help="Interactive Brokers Client Portal Web API (Gateway oder OAuth, ibind)",
+    )
+    ib_sub = p_ib.add_subparsers(dest="ibkr_cmd", required=True)
+
+    ib_sub.add_parser(
+        "diagnose",
+        help="Gateway-/OAuth-Einstellungen anzeigen (ohne API-Call)",
+    )
+    ib_sub.add_parser(
+        "auth",
+        help="Authentifizierungsstatus (Session/Gateway)",
+    )
+    ib_sub.add_parser(
+        "accounts",
+        help="Rohdaten: /portfolio/accounts",
+    )
+    ib_sub.add_parser(
+        "portfolio",
+        help="Konten + alle Positionen (JSON)",
+    )
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.WARNING,
@@ -316,6 +395,16 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_schwab_accounts()
         if args.schwab_cmd == "portfolio":
             return _cmd_schwab_portfolio()
+
+    if args.command == "ibkr":
+        if args.ibkr_cmd == "diagnose":
+            return _cmd_ibkr_diagnose()
+        if args.ibkr_cmd == "auth":
+            return _cmd_ibkr_auth()
+        if args.ibkr_cmd == "accounts":
+            return _cmd_ibkr_accounts()
+        if args.ibkr_cmd == "portfolio":
+            return _cmd_ibkr_portfolio()
 
     raise RuntimeError("unhandled command")
 

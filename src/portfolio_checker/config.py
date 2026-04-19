@@ -77,3 +77,51 @@ def load_schwab_settings() -> SchwabSettings:
         callback_url=callback,
         token_path=Path(raw_path).expanduser(),
     )
+
+
+@dataclass(frozen=True)
+class IbkrSettings:
+    """Interactive Brokers Client Portal API (über ``ibind``)."""
+
+    host: str
+    port: int
+    base_route: str
+    account_id: str | None
+    use_oauth: bool
+    cacert: str | bool
+    rest_url: str | None
+
+
+def load_ibkr_settings() -> IbkrSettings:
+    """Liest Gateway- oder OAuth-Einstellungen; siehe env.example."""
+    load_dotenv()
+    use_oauth = os.environ.get("IBKR_USE_OAUTH", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    aid = _clean_credential(os.environ.get("IBKR_ACCOUNT_ID", ""))
+    account_id = aid if aid else None
+    host = _clean_credential(os.environ.get("IBKR_GATEWAY_HOST", "127.0.0.1"))
+    try:
+        port = int(os.environ.get("IBKR_GATEWAY_PORT", "5000").strip() or "5000")
+    except ValueError as e:
+        raise RuntimeError("IBKR_GATEWAY_PORT muss eine Zahl sein.") from e
+    base = _clean_credential(os.environ.get("IBKR_BASE_ROUTE", "/v1/api/"))
+    if not base.startswith("/"):
+        base = "/" + base
+    if not base.endswith("/"):
+        base = base + "/"
+    cacert_raw = os.environ.get("IBKR_CACERT", "").strip()
+    cacert: str | bool = cacert_raw if cacert_raw else False
+    rest_raw = _clean_credential(os.environ.get("IBKR_REST_URL", ""))
+    rest_url = rest_raw if rest_raw else None
+    return IbkrSettings(
+        host=host,
+        port=port,
+        base_route=base,
+        account_id=account_id,
+        use_oauth=use_oauth,
+        cacert=cacert,
+        rest_url=rest_url,
+    )
