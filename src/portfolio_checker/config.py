@@ -7,6 +7,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+def load_env_files() -> None:
+    """
+    Lädt ``.env`` aus dem aktuellen Arbeitsverzeichnis, danach aus dem
+    Projektroot (neben ``pyproject.toml``), ohne bereits gesetzte Variablen
+    zu überschreiben. So funktionieren CLI-Aufrufe auch außerhalb des Repos.
+    """
+    load_dotenv()
+    project_root = Path(__file__).resolve().parents[2] / ".env"
+    if project_root.is_file():
+        load_dotenv(project_root, override=False)
+
+
 def _clean_credential(raw: str) -> str:
     """Entfernt BOM, äußere Whitespaces und einfache Anführungszeichen aus .env-Zeilen."""
     s = raw.strip().lstrip("\ufeff")
@@ -25,7 +37,7 @@ class EtradeSettings:
 
 def load_etrade_settings() -> EtradeSettings:
     """Lädt E*TRADE-Credentials aus der Umgebung (.env optional)."""
-    load_dotenv()
+    load_env_files()
     key = _clean_credential(os.environ.get("ETRADE_CONSUMER_KEY", ""))
     secret = _clean_credential(os.environ.get("ETRADE_CONSUMER_SECRET", ""))
     if not key or not secret:
@@ -59,13 +71,15 @@ class SchwabSettings:
 
 def load_schwab_settings() -> SchwabSettings:
     """Charles Schwab Trader API (OAuth 2.0) — siehe env.example."""
-    load_dotenv()
+    load_env_files()
     api_key = _clean_credential(os.environ.get("SCHWAB_API_KEY", ""))
     secret = _clean_credential(os.environ.get("SCHWAB_APP_SECRET", ""))
     if not api_key or not secret:
         raise RuntimeError(
             "SCHWAB_API_KEY und SCHWAB_APP_SECRET müssen gesetzt sein "
-            "(Registrierung: https://developer.schwab.com/)."
+            "(Registrierung: https://developer.schwab.com/). "
+            "CLI im Projektordner ausführen oder .env dort ablegen — "
+            "siehe load_env_files() in config.py."
         )
     callback = _clean_credential(
         os.environ.get("SCHWAB_CALLBACK_URL", "https://127.0.0.1:8182")
@@ -94,7 +108,7 @@ class IbkrSettings:
 
 def load_ibkr_settings() -> IbkrSettings:
     """Liest Gateway- oder OAuth-Einstellungen; siehe env.example."""
-    load_dotenv()
+    load_env_files()
     use_oauth = os.environ.get("IBKR_USE_OAUTH", "false").lower() in (
         "1",
         "true",

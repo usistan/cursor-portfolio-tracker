@@ -7,11 +7,11 @@ import logging
 import os
 import sys
 
-from dotenv import load_dotenv
 from requests_oauthlib.oauth1_session import TokenRequestDenied
 
 from portfolio_checker.config import (
     _clean_credential,
+    load_env_files,
     load_etrade_settings,
     load_ibkr_settings,
     load_schwab_settings,
@@ -52,7 +52,7 @@ def _etrade_consumer_key_rejected_help() -> None:
 
 
 def _cmd_etrade_diagnose() -> int:
-    load_dotenv()
+    load_env_files()
     now = datetime.datetime.now().astimezone()
     sandbox = os.environ.get("ETRADE_SANDBOX", "false").lower() in (
         "1",
@@ -145,7 +145,7 @@ def _cmd_etrade_portfolio(args: argparse.Namespace) -> int:
 
 
 def _cmd_schwab_diagnose() -> int:
-    load_dotenv()
+    load_env_files()
     now = datetime.datetime.now().astimezone()
     k = _clean_credential(os.environ.get("SCHWAB_API_KEY", ""))
     s = _clean_credential(os.environ.get("SCHWAB_APP_SECRET", ""))
@@ -222,7 +222,7 @@ def _cmd_schwab_portfolio() -> int:
 
 
 def _cmd_ibkr_diagnose() -> int:
-    load_dotenv()
+    load_env_files()
     now = datetime.datetime.now().astimezone()
     try:
         s = load_ibkr_settings()
